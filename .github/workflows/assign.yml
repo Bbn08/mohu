@@ -1,0 +1,69 @@
+name: Issue Assignment Bot
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  assign:
+    name: Handle /assign command
+    runs-on: ubuntu-latest
+    if: |
+      github.event.issue.pull_request == null &&
+      contains(github.event.comment.body, '/assign')
+    permissions:
+      issues: write
+
+    steps:
+      - name: Process /assign
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const commenter = context.payload.comment.user.login;
+            const issueNumber = context.issue.number;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            const issue = await github.rest.issues.get({
+              owner,
+              repo,
+              issue_number: issueNumber,
+            });
+
+            const assignees = issue.data.assignees.map(a => a.login);
+            const MAX_ASSIGNEES = 3;
+
+            if (assignees.includes(commenter)) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: issueNumber,
+                body: `Hey @${commenter}, you are already assigned to this issue. Good luck!`,
+              });
+              return;
+            }
+
+            if (assignees.length >= MAX_ASSIGNEES) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: issueNumber,
+                body: `Hey @${commenter}, this issue already has ${MAX_ASSIGNEES} contributors working on it and is now full.\n\nCheck out our other open issues — there are plenty of good ones to pick up!`,
+              });
+              return;
+            }
+
+            await github.rest.issues.addAssignees({
+              owner,
+              repo,
+              issue_number: issueNumber,
+              assignees: [commenter],
+            });
+
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: issueNumber,
+              body: `Assigned @${commenter}! Welcome aboard.\n\nA few things before you start:\n- Read [CONTRIBUTING.md](../blob/main/CONTRIBUTING.md) if you haven't already.\n- Comment here if you have questions — we're happy to help.\n- Open a draft PR early so we can give feedback before the full implementation.\n\nGood luck!`,
+            });
