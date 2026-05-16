@@ -1,0 +1,231 @@
+name: PR Review Bot
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  # ── Welcome comment on first open ────────────────────────────────────────────
+  welcome:
+    name: Welcome
+    runs-on: ubuntu-latest
+    if: github.event.action == 'opened'
+    steps:
+      - name: Post welcome comment
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const author = context.payload.pull_request.user.login;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: [
+                `Thanks for the PR, @${author}!`,
+                ``,
+                `Automated checks running now. While you wait, please confirm:`,
+                ``,
+                `- [ ] \`cargo fmt --all\` applied`,
+                `- [ ] \`cargo clippy --workspace -- -D warnings\` passes locally`,
+                `- [ ] \`cargo test --workspace\` passes locally`,
+                `- [ ] Commits are signed off (\`git commit -s\`)`,
+                `- [ ] PR description links the related issue (\`Closes #N\`)`,
+                `- [ ] Any \`unsafe\` block has a \`// SAFETY:\` comment`,
+                ``,
+                `A maintainer will review once checks are green.`,
+              ].join('\n'),
+            });
+
+  # ── Format check ─────────────────────────────────────────────────────────────
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    outputs:
+      result: ${{ steps.check.outputs.result }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Check formatting
+        id: check
+        run: |
+          if cargo fmt --all -- --check; then
+            echo "result=pass" >> $GITHUB_OUTPUT
+          else
+            echo "result=fail" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+  # ── Clippy (inline annotations + output capture) ──────────────────────────
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    outputs:
+      result: ${{ steps.check.outputs.result }}
+      warnings: ${{ steps.check.outputs.warnings }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Run clippy
+        id: check
+        run: |
+          output=$(cargo clippy --workspace --all-targets -- -D warnings 2>&1 || true)
+          warnings=$(echo "$output" | grep -c "^warning" || true)
+          errors=$(echo "$output" | grep -c "^error" || true)
+          echo "warnings=$warnings" >> $GITHUB_OUTPUT
+          if [ "$errors" -gt 0 ]; then
+            echo "result=fail" >> $GITHUB_OUTPUT
+            echo "$output"
+            exit 1
+          else
+            echo "result=pass" >> $GITHUB_OUTPUT
+          fi
+
+  # ── Tests ─────────────────────────────────────────────────────────────────
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    outputs:
+      result: ${{ steps.run.outputs.result }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run tests
+        id: run
+        run: |
+          if cargo test --workspace 2>&1; then
+            echo "result=pass" >> $GITHUB_OUTPUT
+          else
+            echo "result=fail" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+  # ── Code scan (unsafe without SAFETY, unwrap in lib code) ─────────────────
+  scan:
+    name: Code Scan
+    runs-on: ubuntu-latest
+    outputs:
+      result: ${{ steps.scan.outputs.result }}
+      findings: ${{ steps.scan.outputs.findings }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan for common issues
+        id: scan
+        run: |
+          findings=""
+
+          # unsafe blocks missing // SAFETY: comment
+          unsafe_missing=$(grep -rn "unsafe {" crates/ --include="*.rs" -l | \
+            xargs -I{} sh -c 'file="{}"; \
+              grep -n "unsafe {" "$file" | while IFS=: read lineno rest; do \
+                prev=$(sed -n "$((lineno-1))p" "$file"); \
+                if ! echo "$prev" | grep -q "SAFETY"; then \
+                  echo "$file:$lineno"; \
+                fi; \
+              done' 2>/dev/null | head -10 || true)
+
+          # unwrap() in library code (excluding tests and examples)
+          unwrap_count=$(grep -rn "\.unwrap()" crates/ \
+            --include="*.rs" \
+            --exclude-dir="tests" \
+            --exclude-dir="examples" \
+            --exclude-dir="benches" | \
+            grep -v "#\[cfg(test)\]" | \
+            grep -v "\.unwrap() //" | \
+            wc -l | tr -d ' ' || echo "0")
+
+          if [ -n "$unsafe_missing" ] || [ "$unwrap_count" -gt 0 ]; then
+            findings="unsafe_without_safety=$(echo "$unsafe_missing" | wc -l | tr -d ' '),unwrap_count=$unwrap_count"
+            echo "result=warn" >> $GITHUB_OUTPUT
+          else
+            findings="none"
+            echo "result=pass" >> $GITHUB_OUTPUT
+          fi
+          echo "findings=$findings" >> $GITHUB_OUTPUT
+
+  # ── Summary comment ───────────────────────────────────────────────────────
+  summary:
+    name: Post Review Summary
+    runs-on: ubuntu-latest
+    needs: [fmt, clippy, test, scan]
+    if: always()
+    steps:
+      - name: Post summary
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const results = {
+              fmt:    '${{ needs.fmt.outputs.result }}',
+              clippy: '${{ needs.clippy.outputs.result }}',
+              test:   '${{ needs.test.outputs.result }}',
+              scan:   '${{ needs.scan.outputs.result }}',
+            };
+
+            const icon = (r) => r === 'pass' ? '✅' : r === 'warn' ? '⚠️' : r === 'fail' ? '❌' : '⏭️';
+
+            const allPass = Object.values(results).every(r => r === 'pass' || r === 'warn');
+
+            const lines = [
+              `## Automated Review Summary`,
+              ``,
+              `| Check | Result |`,
+              `|-------|--------|`,
+              `| Format (\`cargo fmt\`) | ${icon(results.fmt)} ${results.fmt} |`,
+              `| Clippy (\`-D warnings\`) | ${icon(results.clippy)} ${results.clippy} |`,
+              `| Tests (\`cargo test\`) | ${icon(results.test)} ${results.test} |`,
+              `| Code scan | ${icon(results.scan)} ${results.scan} |`,
+              ``,
+            ];
+
+            if (results.scan === 'warn') {
+              lines.push(`> **Code scan findings:** ${{ needs.scan.outputs.findings }}`);
+              lines.push(`> Check for \`unsafe\` blocks missing \`// SAFETY:\` comments and \`.unwrap()\` in library code.`);
+              lines.push(``);
+            }
+
+            if (allPass) {
+              lines.push(`All checks passed. Ready for maintainer review.`);
+            } else {
+              lines.push(`One or more checks failed. Please fix the issues above before requesting review.`);
+            }
+
+            // Find and update existing summary comment, or post new one
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+            });
+
+            const botComment = comments.find(c =>
+              c.user.type === 'Bot' &&
+              c.body.includes('Automated Review Summary')
+            );
+
+            const body = lines.join('\n');
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                body,
+              });
+            }
