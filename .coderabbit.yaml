@@ -1,0 +1,72 @@
+version: "2"
+
+language: en-US
+
+tone_instructions: >
+  Be direct and terse. No praise, no filler. Flag real issues only.
+  Assume the author knows Rust. Skip obvious style nits.
+
+reviews:
+  profile: assertive
+  request_changes_workflow: true
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+
+  path_filters:
+    - "!fuzz/**"
+    - "!target/**"
+    - "!**/*.lock"
+
+  path_instructions:
+    - path: "crates/mohu-buffer/**"
+      instructions: >
+        This is the memory foundation. Flag any unsafe block missing a `// SAFETY:` comment.
+        Flag any `.unwrap()` outside of tests. Verify DLPack pointer handling is null-checked.
+        Check that strides are always byte-strides (not element-strides).
+
+    - path: "crates/mohu-dtype/**"
+      instructions: >
+        Flag any changes to DType discriminant values (repr(u8) codes must be stable).
+        Flag any change to the promotion table that isn't symmetric.
+        Flag `from_u8` without an out-of-range check.
+
+    - path: "crates/mohu-error/**"
+      instructions: >
+        Flag any new MohuError variant missing from the `code()` match arm.
+        Flag any new variant missing from the `kind()` delegation.
+        All error messages must be lowercase sentence fragments (thiserror convention).
+
+    - path: "crates/mohu-simd/**"
+      instructions: >
+        All kernels are currently stubs. Flag any unsafe SIMD intrinsic missing
+        a `// SAFETY:` comment explaining alignment and feature-gate requirements.
+        Flag missing `#[target_feature(enable = "...")]` on AVX2/AVX-512 functions.
+
+    - path: "**/*.rs"
+      instructions: >
+        Enforce mohu code style:
+        - No `.unwrap()` or `.expect()` in library code (only in tests/benches/examples).
+        - Every `unsafe` block must have a `// SAFETY:` comment on the line immediately above.
+        - No `#[allow(clippy::...)]` without an inline comment explaining why.
+        - No `todo!()` or `unimplemented!()` — use `MohuError::NotImplemented` instead.
+        - Commits must follow Conventional Commits: feat|fix|perf|refactor|doc|test|chore|ci.
+        - All public API items need doc comments.
+
+    - path: ".github/workflows/**"
+      instructions: >
+        Flag any workflow that pins an action without a version tag.
+        Flag any use of `pull_request_target` without explicit permission scoping.
+        Flag secrets referenced without the `secrets.` prefix.
+
+  abort_on_close: true
+
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - main
+
+chat:
+  auto_reply: true
