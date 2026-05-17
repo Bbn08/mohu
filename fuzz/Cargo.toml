@@ -1,0 +1,34 @@
+[package]
+name    = "mohu-fuzz"
+version = "0.0.1"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+mohu-buffer   = { path = "../crates/mohu-buffer" }
+mohu-dtype    = { path = "../crates/mohu-dtype" }
+
+# Prevent this from being included in the normal workspace build.
+[workspace]
+
+[[bin]]
+name  = "fuzz_dlpack"
+path  = "fuzz_targets/fuzz_dlpack.rs"
+test  = false
+doc   = false
+
+[[bin]]
+name  = "fuzz_layout"
+path  = "fuzz_targets/fuzz_layout.rs"
+test  = false
+doc   = false
+
+[[bin]]
+name  = "fuzz_from_slice"
+path  = "fuzz_targets/fuzz_from_slice.rs"
+test  = false
+doc   = false

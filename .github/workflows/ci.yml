@@ -80,6 +80,29 @@ jobs:
           manifest-path: Cargo.toml
           config: deny.toml
 
+  # ── Benchmarks (compile-only — no regression numbers in CI) ─────────────
+  bench-build:
+    name: Bench Build
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --benches --workspace
+
+  # ── Fuzz targets (compile-only — nightly required for cargo-fuzz) ─────────
+  fuzz-build:
+    name: Fuzz Build
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install cargo-fuzz --locked
+      - run: cargo fuzz build --fuzz-dir fuzz
+
   # ── Python (gated until mohu-py crate exists) ─────────────────────────────
   # Tracked in: https://github.com/mohu-org/mohu/issues/7
   # python-test:

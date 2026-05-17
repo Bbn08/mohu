@@ -30,3 +30,12 @@ libc.workspace = true
 [dependencies.memmap2]
 workspace = true
 optional  = true
+
+[dev-dependencies]
+proptest.workspace  = true
+approx.workspace    = true
+criterion.workspace = true
+
+[[bench]]
+name    = "buffer_ops"
+harness = false
