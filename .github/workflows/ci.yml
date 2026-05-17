@@ -103,6 +103,47 @@ jobs:
       - run: cargo install cargo-fuzz --locked
       - run: cargo fuzz build --fuzz-dir fuzz
 
+  # ── Per-crate tests ───────────────────────────────────────────────────────
+  test-error:
+    name: Test / mohu-error
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p mohu-error --test error_tests
+
+  test-dtype:
+    name: Test / mohu-dtype
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p mohu-dtype --test dtype_tests
+
+  test-array:
+    name: Test / mohu-array
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p mohu-array --test array_tests
+
+  test-core:
+    name: Test / mohu-core
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p mohu-core --test core_tests
+
   # ── Coverage (upload to Codecov after tests pass) ────────────────────────
   coverage:
     name: Coverage
