@@ -1,0 +1,57 @@
+name: PR Title Checker
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  check:
+    name: PR Title Checker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # Must match: feat|fix|perf|refactor|doc|test|chore|ci
+          # Scope is optional. Breaking changes use ! suffix.
+          types: |
+            feat
+            fix
+            perf
+            refactor
+            doc
+            test
+            chore
+            ci
+          # Scope must be a known crate name or "all"
+          scopes: |
+            error
+            dtype
+            buffer
+            array
+            core
+            simd
+            ufunc
+            index
+            ops
+            fft
+            random
+            special
+            stats
+            sparse
+            masked
+            io
+            py
+            testing
+            all
+            examples
+            workflows
+          requireScope: false
+          subjectPattern: ^.{1,72}$
+          subjectPatternError: |
+            PR title subject must be 72 characters or fewer.
+          wip: false
